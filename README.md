@@ -19,4 +19,4 @@ The google assistant code was not included. Neither was the app because it was m
 
 ## To do
   - [ ] port app to flutter
-  - [ ] refactor code using another library
+  - [x] refactor code using another library
