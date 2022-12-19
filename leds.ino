@@ -29,10 +29,9 @@ IPAddress subnet(255, 255, 255, 0);
 IPAddress dns (192, 168, 0, 1);
 
 //constantes para el adafruit
-#define WIFI_SSID       "casita1"
-#define WIFI_PASS       "monoxidodedihidrogeno"
-#define IO_USERNAME    "campodetenis"
-#define IO_KEY         "aio_vCbx58Z4a8DPGZ5HFamj6Zaey7Of"
+#define WIFI_SSID       "ssid"
+#define WIFI_PASS       "pass"
+
 
 //constantes del programa
 #define LED 32 //led rojo a secas
