@@ -29,9 +29,8 @@ IPAddress subnet(255, 255, 255, 0);
 IPAddress dns (192, 168, 0, 1);
 
 //constantes para el adafruit
-#define WIFI_SSID       "ssid"
-#define WIFI_PASS       "pass"
-
+#define WIFI_SSID       "wifi"
+#define WIFI_PASS       "contraseña"
 
 //constantes del programa
 #define LED 32 //led rojo a secas
@@ -42,6 +41,8 @@ IPAddress dns (192, 168, 0, 1);
 
 //objetos de adafruit.io
 
+//borrar
+char cadena[100];
 
 //objetos de la tira led
 Adafruit_NeoPixel pixels(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
@@ -72,16 +73,24 @@ bool deteccionMovimiento = true; //indica si se le hace caso al detector o no
 int value = 0;
 int contador = 1; //para la secuencia de inicio
 int bandera =1; //para no repetir la animacion del sensor
+
 unsigned long startTime;
 unsigned long tiempoPasado;
 unsigned long tiempoEspera = 30 * 1000;
+unsigned long firstTime; //timepo al empezar el programa
+unsigned long elapsedTime = 0; //tiempo desde que empezo el programa
+unsigned long wifiErrorTime = 0; //tiempo desde que se desconecto. Sirve como timeout
+
+int dotCounter; //para la animacion de puntos suspensivos cuando me quedo sin conexion
+int nTimeouts = 0; //number of times the system has lost connection
+
 
 //WiFiServer server(80);
 WebServer server(80);
 
 void handle_OnConnect(){
   //result= strcpy(result, "{connected:true, 
-  server.send(200, "json","{connected:true, color:%s, mode: %d}","color",modoActual);
+  server.send(200, "json","{connected:true, }");
 }
 
 void changeColor(int red, int green, int blue){
@@ -97,16 +106,19 @@ void changeGreen(){
 void changeRed(){
   colorActual = pixels.Color(255,0,0);
       server.send(200, "json","{sucess:true,color:red}");
+      Serial.println(colorActual);
 }
 
 void changePink(){
     colorActual = rosa;
     server.send(200, "json","{sucess:true,color:pink}");
+    Serial.println(colorActual);
 }
 
 void changeBlue(){
   colorActual = pixels.Color(0,0,255);
   server.send(200, "json","{sucess:true,color:blue}");
+  Serial.println(colorActual);
 }
 
 void changeRainbow(){
@@ -183,6 +195,8 @@ void handle_NotFound() {
 }
 
 void setup() {
+  pinMode(2,OUTPUT);
+  digitalWrite(2,LOW);
   // put your setup code here, to run once:
   Serial.begin(9600);
   Serial.println("conectado");
@@ -209,10 +223,17 @@ void setup() {
   //WiFi.softAP(WIFI_SSID, WIFI_PASS);
   //WiFi.softAPConfig(ip,gateway,subnet);
 
+  wifiErrorTime = millis();
   while (WiFi.status() != WL_CONNECTED) {
       delay(500);
       Serial.print(".");
       colorWipe(pixels.Color(255,0,0),5);
+
+        //si llego a 5 minutos bloqueado alv
+        if( (millis() - wifiErrorTime) > (5 * 1000 * 60)){
+          Serial.println("Reset");
+          ESP.restart();
+        }
   }
 
   Serial.println("");
@@ -245,19 +266,62 @@ void setup() {
   delay(500);
   colorWipe(pixels.Color(0,0,0),5);
   Serial.println("listening");
+  firstTime = millis();
+    //digitalWrite(2,HIGH);
 }
 
 void loop() {
- 
+  //el core principal escucha peticiones y cambia las variables globales color y modo
+  //ademas, en caso de desconexion reintenta la conexion.
+  //si tarda mas de 2 minutos en reconectar o se desconecta mas de 5 veces se reinicia el esp32
+  
   server.handleClient();
-  //Serial.println("estoy bloqueado");  
+  elapsedTime = millis() - firstTime;
+
+  if(WiFi.status() != WL_CONNECTED){
+    Serial.println("disconnected");
+    if(nTimeouts == 0){
+         wifiErrorTime = millis();  
+    }else if(nTimeouts >=5){
+      ESP.restart();
+    }else{
+      nTimeouts++;
+    }
+    
+    WiFi.begin(WIFI_SSID, WIFI_PASS);
+      while (WiFi.status() != WL_CONNECTED) {
+        Serial.println("disconnected");
+        pixels.setPixelColor(0,pixels.Color(255,0,0));
+        pixels.show();
+
+        //si llego a 2 minutos bloqueado alv
+        if( (millis() - wifiErrorTime) > (2 * 1000 * 60)){
+          Serial.println("Reset");
+          ESP.restart();
+        }
+    }
+    pixels.setPixelColor(0,colorActual);
+    pixels.show();
+    Serial.println("reconnected");
+  }
+
 }
 
 //codigo del otro core
 void Task1code( void * parameter) {
-  for(;;) {
+          Serial.println("core2");
 
+      for(;;){
         //colorWipe(pixels.Color(255,0, 0),50);
+        //Serial.println(millis()/1000);
+
+        if(WiFi.status() != WL_CONNECTED){
+          Serial.println("disconnected");
+        }else{
+          Serial.println(millis()/1000);
+        }
+
+        
         if(!sensorActivo){
           switch (modoActual){
             case 0:
@@ -281,25 +345,34 @@ void Task1code( void * parameter) {
                cambiarColorOndas(colorActual);
                break;
           }
+          
         }else{
           if(digitalRead(DETECTOR) == HIGH){
              startTime = millis();
+             tiempoPasado = millis();
+             //sprintf(cadena,"%d - %d = %d", tiempoPasado, startTime, tiempoPasado - startTime);
+             //Serial.println(cadena);
              server.send(200, "json","{movement:detected}");
             //ya se mantienen en su color (o en el que toque)
             //Serial.println("sensor HIGH");
           }
           
           if((tiempoPasado - startTime) < tiempoEspera){
+          //Serial.println(bandera);
               if(bandera == 0){
-              cambiarColorBrillo(colorActual);
-              bandera = 1;
-            }
-            Serial.println((tiempoPasado - startTime));
+                Serial.println("cambio el color");
+                cambiarColorBrillo(colorActual);
+                bandera = 1;
+              }else{
+                  sprintf(cadena,"tiempo pasado => %d - %d = %d segundos", tiempoPasado, startTime, (tiempoPasado - startTime)/1000);
+              }
+
           }else{
             bandera = 0;
             //Serial.println("SensorLow");
             pixels.clear();
             pixels.show();
+            //Serial.println("se acabo el timpo");
           }
           tiempoPasado = millis();
         }
